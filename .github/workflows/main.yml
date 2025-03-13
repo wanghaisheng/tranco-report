@@ -1,0 +1,55 @@
+name: Domain Rank Analysis
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 每天 UTC 00:00 运行
+
+jobs:
+  ingest_and_analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pybloom_live
+
+      - name: Download zip file
+        run: |
+          mkdir -p data
+          wget https://tranco-list.eu/top-1m.csv.zip -O data/tranco.zip
+
+      - name: Run data ingestion script
+        run: python data_ingestion.py
+
+      - name: Run weekly analysis script
+        if: ${{ github.event_name == 'schedule' && github.event.schedule == '0 0 * * 0' }}  # Every Sunday
+        run: python data_analysis.py # 默认生成 周报
+
+      - name: Run monthly analysis script
+        if: ${{ github.event_name == 'schedule' && github.event.schedule == '0 0 1 * *' }}  # Every 1st day of the month
+        run: python data_analysis.py  # 生成月报
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add domain_rank.db
+          git commit -m "Daily data ingestion and periodic analysis" || echo "No changes to commit"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+      - name: Delete zip file
+        run: rm data/tranco.zip
